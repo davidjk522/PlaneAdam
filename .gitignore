@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Model weights / large binary artifacts
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+*.onnx
+*.h5
+*.pb
+
+# Datasets / large data files
+*.nii
+*.nii.gz
+*.npy
+*.npz
+*.mha
+*.mhd
+
+# Environment / secrets
+.env
+.env.*
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs / outputs
+*.log
+logs/
+outputs/
+runs/
+wandb/
+
+# Claude Code
+.claude/
+CLAUDE.local.md
+.mcp.json
