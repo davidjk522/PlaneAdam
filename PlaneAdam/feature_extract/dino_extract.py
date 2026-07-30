@@ -5,6 +5,7 @@ from torch import nn
 
 from models.hub.backbones import _make_dinov3_vit_model_arch
 from models.layers import Mlp, SwiGLUFFN
+from planecycle.converters.converter import PlaneCycleConverter
 
 
 class DinoBackboneExtractor:
@@ -28,6 +29,7 @@ class DinoBackboneExtractor:
         self.device = self.get_device()
         self.backbone = backbone.to(self.device)
         self.arch_name = self.find_backbone(self.backbone)
+        self.planecycle = PlaneCycleConverter(self.backbone)
 
     @staticmethod
     def detect_cuda() -> bool:
@@ -65,4 +67,19 @@ class DinoBackboneExtractor:
 
         model_arch = _make_dinov3_vit_model_arch(patch_size=patch_size, compact_arch_name=compact_arch_name)
         return f"dinov3_{model_arch}"
-    
+
+    def extract_feature_planecycle(self, volume: torch.Tensor) -> torch.Tensor:
+        """
+        Extract the 3D spatial feature map from a volume via PlaneCycle.
+
+        Args:
+            volume: Input volume (B, C, D, H, W).
+        Returns:
+            xf: Spatial feature map (B, D, H, W, C) — used for registration.
+            (The per-plane global feature vector xcls is also produced internally
+            by PlaneCycle but isn't needed for registration, so it's discarded here.)
+        """
+        self.backbone.eval()
+        with torch.no_grad():
+            xf, _xcls = self.planecycle(volume.to(self.device))
+            return xf
