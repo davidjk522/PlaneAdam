@@ -11,3 +11,7 @@ Development Stage
 2. Process the feature map tensors
 3. Use ConvexAdam Method to optimize deformation field
 
+
+Command Ex
+
+python train.py --model:<name> --dataset:<dataset directory> --epochs:<epoch number> --batch:<batch>  
