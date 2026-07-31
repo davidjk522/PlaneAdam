@@ -1,0 +1,6 @@
+Best setting: #0 of 6 (grid_sp=2, disp_hw=2)
+Dice (overall):        0.565
+Dice (robust-30):      0.297
+Jacobian std:          0.0255
+Foldover fraction:     0.0000
+Compute time (s/pair): 6.72

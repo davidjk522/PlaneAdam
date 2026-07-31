@@ -83,6 +83,8 @@
     192
   ],
   "num_labels": 36,
+  "backbone": "dinov3_vits16",
+  "checkpoint": "dinov3_vits16_pretrain_lvd1689m-08c60483.pth",
   "output": "OASIS_output/convex_search_results.pth",
   "output_adam": "OASIS_output/adam_search_results.pth"
 }
