@@ -34,6 +34,12 @@ class PlaneCycleOp(nn.Module):
         cycle_order: Ordered plane labels cycled round-robin across blocks.
         rope_embed: RoPE module from the ViT backbone (dinov3 only).
         pool_method: Global token pooling, 'PCg' adaptive avg (recommended) or 'PCm' mean (vit only).
+        plane_chunk_size: If set (vit only), the B*P independent plane-rows in _forward_vit are run
+            through `block` in sub-batches of this size instead of all at once, looping and
+            concatenating results. Each row is a fully self-contained sequence - nothing in
+            _forward_vit lets attention cross rows, and `rope` doesn't depend on P at all - so this
+            is mathematically identical to the unchunked call, just trading peak memory for more
+            forward-pass calls. None (default) preserves the original single-call behavior exactly.
     """
 
     def __init__(
@@ -43,6 +49,7 @@ class PlaneCycleOp(nn.Module):
         rope_embed: Optional[nn.Module] = None,
         plane: Literal["HW", "DW", "DH"] = "HW",
         pool_method=None,
+        plane_chunk_size: Optional[int] = None,
     ) -> None:
         super().__init__()
         if backbone_name == "vit" and pool_method not in ("PCg", "PCm"):
@@ -52,6 +59,7 @@ class PlaneCycleOp(nn.Module):
         self.rope_embed = rope_embed
         self.pool_method = pool_method
         self.plane_dim, self.rope_row, self.rope_col = PLANE_TO_AXES[plane]
+        self.plane_chunk_size = plane_chunk_size
 
     def forward(self, xf: Tensor, xg: Optional[Tensor] = None):
         if self.backbone_name == "vit":
@@ -90,9 +98,20 @@ class PlaneCycleOp(nn.Module):
             if self.rope_embed
             else None
         )
-        tokens = self.block(torch.cat([g_seq, x_seq], dim=1), rope)  # (B*P, g_len+L, C)
-        # Global tokens and spatial tokens are concatenated along the sequence dimension and passe thorugh the transformer block(DINOv3 block). 
-        # The output is then split back into global and spatial tokens.
+        # Global tokens and spatial tokens are concatenated along the sequence dimension and passed
+        # through the transformer block (DINOv3 block). The output is then split back into global
+        # and spatial tokens.
+        block_input = torch.cat([g_seq, x_seq], dim=1)  # (B*P, g_len+L, C)
+        if self.plane_chunk_size is None or self.plane_chunk_size >= block_input.shape[0]:
+            tokens = self.block(block_input, rope)
+        else:
+            # Sub-batch over the B*P independent rows instead of running them all through `block`
+            # at once - see plane_chunk_size docstring above for why this doesn't change the result.
+            chunks = []
+            for start in range(0, block_input.shape[0], self.plane_chunk_size):
+                end = min(start + self.plane_chunk_size, block_input.shape[0])
+                chunks.append(self.block(block_input[start:end], rope))
+            tokens = torch.cat(chunks, dim=0)
         xf = tokens[:, g_len:].reshape_as(xf_plane).movedim(1, self.plane_dim)
         xg = tokens[:, :g_len].reshape_as(xg_pooled)
         return xf, xg

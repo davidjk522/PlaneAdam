@@ -33,11 +33,41 @@ class LoadDataset:
         return imgs_fixed, segs_fixed, masks_fixed, imgs_moving, segs_moving, masks_moving, num_labels
         
 # must extract the neccessary data from the dataset using functions like get_data_train, get_data_test, etc. and return them in the format required by the model.        
+def normalize_intensity(img: torch.Tensor, mask: torch.Tensor, low_pct: float = 0.5, high_pct: float = 99.5) -> torch.Tensor:
+    """
+    Robust per-volume intensity normalization to [0, 1]. Modality-agnostic by construction: the
+    clipping percentiles are computed only over voxels inside the dataset-provided body/ROI mask,
+    so background never skews the range — no CT/MR-specific HU windowing logic needed, and no
+    modality tag has to be threaded through the pairs/config to get it right.
+
+    This exists because nothing upstream of the DINOv3 backbone did any rescaling at all: images
+    were fed in as raw nib intensities. Measured before this function was added: OASIS arrives
+    pre-scaled to [0, 0.82] (whoever prepared that L2R release did it for us, by luck not by
+    design), AbdomenMRCT MR to [0, 698], and AbdomenMRCT CT to raw Hounsfield units
+    [-1024, 2794] — three wildly different scales, all previously passed straight into a
+    Conv2d patch embedding (models/layers/patch_embed.py) whose weights were pretrained on
+    normalized natural-image RGB. That mismatch, especially CT's ~3800-unit range, plausibly
+    dominated any resolution/hyperparameter effect on registration quality.
+    """
+    foreground = img[mask > 0]
+    if foreground.numel() == 0:
+        # No mask coverage (missing/empty mask) - fall back to whole-volume percentiles rather
+        # than crashing or silently skipping normalization.
+        foreground = img.reshape(-1)
+    lo = torch.quantile(foreground, low_pct / 100.0)
+    hi = torch.quantile(foreground, high_pct / 100.0)
+    if hi <= lo:
+        # Degenerate volume (constant intensity, or mask covers only constant voxels) - nothing
+        # sensible to rescale.
+        return torch.zeros_like(img)
+    return ((img - lo) / (hi - lo)).clamp(0.0, 1.0)
+
+
 def get_data_train(pairs, HWD):
     H, W, D = HWD[0], HWD[1], HWD[2]
 
     # images, segmentations, and masks for fixed and moving images
-    imgs_fixed = [] 
+    imgs_fixed = []
     segs_fixed = []
     masks_fixed = []
     imgs_moving = []
@@ -51,6 +81,7 @@ def get_data_train(pairs, HWD):
         img_fixed = torch.from_numpy(nib.load(fixed_path).get_fdata()).float().contiguous()
         seg_fixed = torch.from_numpy(nib.load(fixed_path.replace('imagesTr', 'labelsTr')).get_fdata()).float().contiguous()
         mask_fixed = torch.from_numpy(nib.load(fixed_path.replace('imagesTr', 'masksTr')).get_fdata()).float().contiguous()
+        img_fixed = normalize_intensity(img_fixed, mask_fixed)
         imgs_fixed.append(img_fixed)
         segs_fixed.append(seg_fixed)
         masks_fixed.append(mask_fixed)
@@ -58,6 +89,7 @@ def get_data_train(pairs, HWD):
         img_moving = torch.from_numpy(nib.load(moving_path).get_fdata()).float().contiguous()
         seg_moving = torch.from_numpy(nib.load(moving_path.replace('imagesTr', 'labelsTr')).get_fdata()).float().contiguous()
         mask_moving = torch.from_numpy(nib.load(moving_path.replace('imagesTr', 'masksTr')).get_fdata()).float().contiguous()
+        img_moving = normalize_intensity(img_moving, mask_moving)
         imgs_moving.append(img_moving)
         segs_moving.append(seg_moving)
         masks_moving.append(mask_moving)

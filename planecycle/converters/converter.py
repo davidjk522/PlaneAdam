@@ -5,7 +5,7 @@ The 2D backbone is kept intact and unmodified.
 
 """
 
-from typing import Literal, Tuple
+from typing import Literal, Optional, Tuple
 
 import torch.nn as nn
 from torch import Tensor
@@ -39,6 +39,10 @@ class PlaneCycleConverter(nn.Module):
         backbone: Pretrained 2D backbone (weights are not modified).
         cycle_order: Ordered plane labels cycled round-robin across blocks.
         pool_method: Global token pooling, 'PCg' adaptive avg (recommended) or 'PCm' mean.
+        plane_chunk_size: If set (vit only), passed through to every PlaneCycleOp - sub-batches
+            the independent plane-rows each block processes instead of running them all through
+            the shared 2D block at once. Mathematically identical output, lower peak memory, more
+            forward-pass calls. None (default) preserves the original unchunked behavior.
     """
 
     def __init__(
@@ -46,6 +50,7 @@ class PlaneCycleConverter(nn.Module):
         backbone,
         cycle_order: Tuple[str, ...] = ("HW", "DW", "DH", "HW"),
         pool_method: Literal["PCg", "PCm"] = "PCg",
+        plane_chunk_size: Optional[int] = None,
     ) -> None:
         super().__init__()
 
@@ -69,6 +74,7 @@ class PlaneCycleConverter(nn.Module):
                         rope_embed=self.backbone.rope_embed,
                         plane=cycle_order[i % len(cycle_order)], # each block in the stack is assigned a plane
                         pool_method=pool_method,
+                        plane_chunk_size=plane_chunk_size,
                     )
                     for i, blk in enumerate(self.backbone.blocks)
                 ]

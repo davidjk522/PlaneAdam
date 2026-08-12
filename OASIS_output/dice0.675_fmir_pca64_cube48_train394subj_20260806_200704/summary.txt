@@ -1,0 +1,28 @@
+FMIR decoder training on OASIS
+training pool: 394 subjects (OASIS_0001-0394), 154842 ordered pairs
+held-out eval: 19 official L2R validation pairs from /home/kjk/home/PlaneAdam/OASIS_config.json
+epochs: 1, pairs/epoch: 154842, batch_size: 8, pca: 64, cube: 48, lr: 0.001, lambda_smooth: 1.0
+best held-out mean dice during training: 0.6745
+final held-out mean dice (best checkpoint): 0.6745
+per-pair held-out dice:
+  [0] OASIS/imagesTr/OASIS_0395_0000.nii.gz <- OASIS/imagesTr/OASIS_0396_0000.nii.gz: 0.6501
+  [1] OASIS/imagesTr/OASIS_0396_0000.nii.gz <- OASIS/imagesTr/OASIS_0397_0000.nii.gz: 0.7002
+  [2] OASIS/imagesTr/OASIS_0397_0000.nii.gz <- OASIS/imagesTr/OASIS_0398_0000.nii.gz: 0.7156
+  [3] OASIS/imagesTr/OASIS_0398_0000.nii.gz <- OASIS/imagesTr/OASIS_0399_0000.nii.gz: 0.5838
+  [4] OASIS/imagesTr/OASIS_0399_0000.nii.gz <- OASIS/imagesTr/OASIS_0400_0000.nii.gz: 0.6822
+  [5] OASIS/imagesTr/OASIS_0400_0000.nii.gz <- OASIS/imagesTr/OASIS_0401_0000.nii.gz: 0.6478
+  [6] OASIS/imagesTr/OASIS_0401_0000.nii.gz <- OASIS/imagesTr/OASIS_0402_0000.nii.gz: 0.6276
+  [7] OASIS/imagesTr/OASIS_0402_0000.nii.gz <- OASIS/imagesTr/OASIS_0403_0000.nii.gz: 0.6764
+  [8] OASIS/imagesTr/OASIS_0403_0000.nii.gz <- OASIS/imagesTr/OASIS_0404_0000.nii.gz: 0.6739
+  [9] OASIS/imagesTr/OASIS_0404_0000.nii.gz <- OASIS/imagesTr/OASIS_0405_0000.nii.gz: 0.6464
+  [10] OASIS/imagesTr/OASIS_0405_0000.nii.gz <- OASIS/imagesTr/OASIS_0406_0000.nii.gz: 0.7003
+  [11] OASIS/imagesTr/OASIS_0406_0000.nii.gz <- OASIS/imagesTr/OASIS_0407_0000.nii.gz: 0.6164
+  [12] OASIS/imagesTr/OASIS_0407_0000.nii.gz <- OASIS/imagesTr/OASIS_0408_0000.nii.gz: 0.7056
+  [13] OASIS/imagesTr/OASIS_0408_0000.nii.gz <- OASIS/imagesTr/OASIS_0409_0000.nii.gz: 0.7268
+  [14] OASIS/imagesTr/OASIS_0409_0000.nii.gz <- OASIS/imagesTr/OASIS_0410_0000.nii.gz: 0.7231
+  [15] OASIS/imagesTr/OASIS_0410_0000.nii.gz <- OASIS/imagesTr/OASIS_0411_0000.nii.gz: 0.6673
+  [16] OASIS/imagesTr/OASIS_0411_0000.nii.gz <- OASIS/imagesTr/OASIS_0412_0000.nii.gz: 0.6667
+  [17] OASIS/imagesTr/OASIS_0412_0000.nii.gz <- OASIS/imagesTr/OASIS_0413_0000.nii.gz: 0.6883
+  [18] OASIS/imagesTr/OASIS_0413_0000.nii.gz <- OASIS/imagesTr/OASIS_0414_0000.nii.gz: 0.7172
+
+python -m PlaneAdam.decoder_method.train 

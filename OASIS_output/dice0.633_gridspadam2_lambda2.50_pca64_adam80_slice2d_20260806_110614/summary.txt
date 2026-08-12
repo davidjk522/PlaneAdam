@@ -1,0 +1,25 @@
+All 12 settings (* = best):
+  #  grid_sp_adam  lambda_weight    dice  robust     jstd   time(s)
+-------------------------------------------------------------------
+  0            2         0.50   0.611   0.373   0.1282     14.25
+  1            2         1.25   0.626   0.380   0.0971     14.22
+* 2            2         2.50   0.633   0.383   0.0753     14.20
+  3            2         5.00   0.629   0.371   0.0576     14.11
+  4            3         0.50   0.610   0.370   0.1175      5.80
+  5            3         1.25   0.626   0.379   0.0912      5.75
+  6            3         2.50   0.631   0.380   0.0727      5.72
+  7            3         5.00   0.630   0.375   0.0561      5.74
+  8            4         0.50   0.611   0.372   0.1008      3.44
+  9            4         1.25   0.624   0.380   0.0816      3.43
+ 10            4         2.50   0.627   0.379   0.0671      3.45
+ 11            4         5.00   0.626   0.371   0.0536      3.47
+
+Best setting: #2 of 12 (grid_sp_adam=2, lambda_weight=2.50)
+Dice (overall):        0.633
+Dice (robust-30):      0.383
+Jacobian std:          0.0753
+Foldover fraction:     0.0002
+Compute time (s/pair): 14.20
+
+
+ python PlaneAdam/convex_optimization/convex_run_paired_dino_slice2d.py 0 OASIS_config.json --pca 64 --adam 80

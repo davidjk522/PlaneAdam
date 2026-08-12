@@ -4,3 +4,4 @@ scipy
 nibabel
 SimpleITK
 tqdm
+wandb
