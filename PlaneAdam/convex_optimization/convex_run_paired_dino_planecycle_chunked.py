@@ -1,7 +1,8 @@
 # EXPERIMENTAL VARIANT of convex_run_paired_dino_640.py (itself a 512x512-resolution PlaneCycle
 # run, despite the "640" in its filename - see that file's own comments), adding --plane-chunk-size.
-# This file's own resolution has since been restored to the true 640x640 (see the resize comment
-# below) now that it's running on an A5000 (24GB) instead of the original 12GB card.
+# This file's own resolution has since been pushed to 896x896 (see the resize comment below),
+# MedDINOv3's second documented baseline step, now that it's running on an A5000 (24GB) instead
+# of the original 12GB card.
 #
 # Why this exists: convex_run_paired_dino_640.py's PlaneCycle sweep OOMs on ~31/32 settings at
 # 512x512 on the original 12GB GPU. The cause isn't attention itself being memory-inefficient (verified:
@@ -327,17 +328,18 @@ def main(gpunum, configfile, pca_dim=None, adam_niter=None, plane_chunk_size=Non
                     moving_volume = to_volume_tensor(imgs_moving[i]).unsqueeze(0).to(extractor.device)
 
                     # Upsample the in-plane (H,W) resolution before extraction (patch_size unchanged at
-                    # 16) — 640x640, MedDINOv3's own *baseline* resolution (before their 896x896 step),
-                    # giving a 40x40 native token grid. D is left untouched (it was never patchified to
-                    # begin with). Was previously downgraded to 512x512 to fit a 12GB GPU (see the
-                    # module-level comment above); restored to the true 640 baseline now that we're on
-                    # an A5000 (24GB) — --plane-chunk-size may no longer be needed to avoid OOM, but is
-                    # still available if it is.
+                    # 16) — 896x896, MedDINOv3's second documented baseline step (after 640x640, before
+                    # their 896x896 being the largest resolution they report scaling to), giving a
+                    # 56x56 native token grid. D is left untouched (it was never patchified to begin
+                    # with). Was previously downgraded to 512x512 to fit a 12GB GPU (see the
+                    # module-level comment above), then briefly restored to 640, then pushed to this
+                    # 896 step now that we're on an A5000 (24GB) — watch memory here; consider
+                    # --plane-chunk-size if this OOMs.
                     # Note: our native H,W (160,224) isn't square like MedDINOv3's CT slices, so this
-                    # resize stretches H ~4x vs W ~2.9x — a real aspect-ratio distortion, flagged
+                    # resize stretches H ~5.6x vs W ~4x — a real aspect-ratio distortion, flagged
                     # rather than silently applied.
-                    fixed_volume = F.interpolate(fixed_volume, size=(D, 640, 640), mode='trilinear', align_corners=False)
-                    moving_volume = F.interpolate(moving_volume, size=(D, 640, 640), mode='trilinear', align_corners=False)
+                    fixed_volume = F.interpolate(fixed_volume, size=(D, 896, 896), mode='trilinear', align_corners=False)
+                    moving_volume = F.interpolate(moving_volume, size=(D, 896, 896), mode='trilinear', align_corners=False)
 
                     # extract_feature_planecycle returns (B, D, H, W, C) on the *native ViT patch grid*
                     # (D at full native resolution, H/W collapsed to patch_size steps) — permute to
@@ -478,7 +480,7 @@ def main(gpunum, configfile, pca_dim=None, adam_niter=None, plane_chunk_size=Non
     mind_suffix = f'_mind{lambda_mind:g}r{mind_r}d{mind_d}' if lambda_mind > 0 else ''
     param_suffix = (f'_gridspadam{best_param0}_lambda{best_param1_str}' if adam_niter is not None
                      else f'_gridsp{best_param0}_disphw{best_param1_str}')
-    run_name = f'dice{best_dice:.3f}{param_suffix}{pca_suffix}{adam_suffix}{chunk_suffix}{ncc_suffix}{mind_suffix}_planecycle640_{time.strftime("%Y%m%d_%H%M%S")}'
+    run_name = f'dice{best_dice:.3f}{param_suffix}{pca_suffix}{adam_suffix}{chunk_suffix}{ncc_suffix}{mind_suffix}_planecycle896_{time.strftime("%Y%m%d_%H%M%S")}'
     output_dir = os.path.join(os.path.dirname(config['output']) or '.', run_name)
     os.makedirs(output_dir, exist_ok=True)
 
