@@ -91,9 +91,14 @@ def extract_feature_slice2d_multilayer(backbone, volume, device, num_layers, chu
         for start in range(0, D, chunk_size):
             end = min(start + chunk_size, D)
             vol_chunk = volume[:, :, start:end, :, :].to(device)
-            # tuple of num_layers tensors, each (B*chunk_d, H_tok*W_tok, C), oldest kept layer first
-            layer_tokens = backbone.get_intermediate_layers(vol_chunk, n=num_layers, reshape=False, norm=True)
-            patch_tokens = torch.cat(layer_tokens, dim=-1)  # (B*chunk_d, H_tok*W_tok, C*num_layers)
+            # bf16 autocast: inference-only forward (no_grad above), halves activation memory with
+            # negligible accuracy impact — bf16 shares fp32's exponent range, so no overflow risk,
+            # unlike fp16. Added after 896x896 + dinov3_vitb16 combined to OOM a 24GB A5000.
+            with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+                # tuple of num_layers tensors, each (B*chunk_d, H_tok*W_tok, C), oldest kept layer first
+                layer_tokens = backbone.get_intermediate_layers(vol_chunk, n=num_layers, reshape=False, norm=True)
+                patch_tokens = torch.cat(layer_tokens, dim=-1)  # (B*chunk_d, H_tok*W_tok, C*num_layers)
+            patch_tokens = patch_tokens.float()
             C = patch_tokens.shape[-1]
             chunks.append(patch_tokens.view(B, end - start, H_tok, W_tok, C))
         return torch.cat(chunks, dim=1)

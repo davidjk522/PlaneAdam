@@ -81,5 +81,10 @@ class DinoBackboneExtractor:
         """
         self.backbone.eval()
         with torch.no_grad():
-            xf, _xcls = self.planecycle(volume.to(self.device))
-            return xf
+            # bf16 autocast: inference-only forward, halves activation memory with negligible
+            # accuracy impact — bf16 shares fp32's exponent range, so no overflow risk, unlike
+            # fp16. Added after 896x896 + dinov3_vitb16 combined to OOM a 24GB A5000. Cast back to
+            # fp32 immediately since downstream PCA/correlate/Adam-refinement code expects it.
+            with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+                xf, _xcls = self.planecycle(volume.to(self.device))
+            return xf.float()
