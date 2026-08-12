@@ -217,16 +217,23 @@ def main(gpunum, configfile, pca_dim=None, adam_niter=None):
                     moving_volume = to_volume_tensor(imgs_moving[i]).unsqueeze(0).to(extractor.device)
 
                     # Upsample the in-plane (H,W) resolution before extraction (patch_size unchanged at
-                    # 16) — 640x640 is MedDINOv3's own *baseline* resolution (before their 896x896 step),
-                    # giving a 40x40 native token grid, double the 20x20 the 320x320 baseline used. D is
-                    # left untouched (it was never patchified to begin with). Unlike the Slice2D 640
-                    # variant, extraction here is NOT chunked along D — see the module-level comment for
-                    # why that trick doesn't transfer to PlaneCycle. If this OOMs, that's the tradeoff.
+                    # 16) — 896x896, MedDINOv3's second documented baseline step (after 640x640),
+                    # giving a 56x56 native token grid, matching the other sweep variants (see
+                    # convex_run_paired_dino_planecycle_chunked.py / convex_run_paired_dino_slice2d_512.py).
+                    # This resize was previously mislabeled — the filename says "640" but the code was
+                    # actually resizing to 512x512 (see historical comments in
+                    # convex_run_paired_dino_planecycle_chunked.py, which forked from this file and
+                    # explains why 512 was chosen for a 12GB GPU); corrected here to the true 896 step
+                    # now that we're on an A5000 (24GB). D is left untouched (it was never patchified to
+                    # begin with). Unlike the Slice2D variants, extraction here is NOT chunked along D —
+                    # see the module-level comment for why that trick doesn't transfer to PlaneCycle. If
+                    # this OOMs, that's the tradeoff (use convex_run_paired_dino_planecycle_chunked.py's
+                    # --plane-chunk-size instead).
                     # Note: our native H,W (160,224) isn't square like MedDINOv3's CT slices, so this
-                    # resize stretches H ~4x vs W ~2.9x — a real aspect-ratio distortion, flagged rather
+                    # resize stretches H ~5.6x vs W ~4x — a real aspect-ratio distortion, flagged rather
                     # than silently applied.
-                    fixed_volume = F.interpolate(fixed_volume, size=(D, 512, 512), mode='trilinear', align_corners=False)
-                    moving_volume = F.interpolate(moving_volume, size=(D, 512, 512), mode='trilinear', align_corners=False)
+                    fixed_volume = F.interpolate(fixed_volume, size=(D, 896, 896), mode='trilinear', align_corners=False)
+                    moving_volume = F.interpolate(moving_volume, size=(D, 896, 896), mode='trilinear', align_corners=False)
 
                     # extract_feature_planecycle returns (B, D, H, W, C) on the *native ViT patch grid*
                     # (D at full native resolution, H/W collapsed to patch_size steps) — permute to
@@ -360,7 +367,7 @@ def main(gpunum, configfile, pca_dim=None, adam_niter=None):
     adam_suffix = f'_adam{adam_niter}' if adam_niter else ''
     param_suffix = (f'_gridspadam{best_param0}_lambda{best_param1_str}' if adam_niter is not None
                      else f'_gridsp{best_param0}_disphw{best_param1_str}')
-    run_name = f'dice{best_dice:.3f}{param_suffix}{pca_suffix}{adam_suffix}_planecycle640_{time.strftime("%Y%m%d_%H%M%S")}'
+    run_name = f'dice{best_dice:.3f}{param_suffix}{pca_suffix}{adam_suffix}_planecycle896_{time.strftime("%Y%m%d_%H%M%S")}'
     output_dir = os.path.join(os.path.dirname(config['output']) or '.', run_name)
     os.makedirs(output_dir, exist_ok=True)
 

@@ -20,6 +20,8 @@
 # Pick --grid-sp/--disp-hw (or --grid-sp-adam/--lambda-weight/--lambda-ncc/--lambda-mind if
 # --adam is set) to match whichever run's summary.txt / folder name you want to visualize - e.g.
 # a folder named dice0.781_..._gridspadam2_lambda5.00_..._ncc1w9_mind2.5r1d2_planecycle512_...
+# (an older run, from before the resolution was pushed to 896 - see the resize call below; for
+# new planecycle896_... folders, the visualization resolution here already matches)
 # implies --adam ... --grid-sp-adam 2 --lambda-weight 5.0 --lambda-ncc 1.0 --ncc-win 9
 # --lambda-mind 2.5 --mind-r 1 --mind-d 2 (grid_sp/disp_hw fixed at FIXED_GRID_SP/FIXED_DISP_HW
 # from that file when --adam is active, currently 6/4).
@@ -135,8 +137,11 @@ def main():
         # --- feature extraction (same as main()'s per-pair block) ---
         fixed_volume = to_volume_tensor(imgs_fixed[0]).unsqueeze(0).to(extractor.device)
         moving_volume = to_volume_tensor(imgs_moving[0]).unsqueeze(0).to(extractor.device)
-        fixed_volume = F.interpolate(fixed_volume, size=(D, 512, 512), mode='trilinear', align_corners=False)
-        moving_volume = F.interpolate(moving_volume, size=(D, 512, 512), mode='trilinear', align_corners=False)
+        # Kept in sync with convex_run_paired_dino_planecycle_chunked.py's resize (currently 896x896,
+        # MedDINOv3's second baseline step) — must match whichever resolution the run being
+        # visualized actually used, or PCA/features will be extracted at the wrong scale.
+        fixed_volume = F.interpolate(fixed_volume, size=(D, 896, 896), mode='trilinear', align_corners=False)
+        moving_volume = F.interpolate(moving_volume, size=(D, 896, 896), mode='trilinear', align_corners=False)
 
         features_fix_native = extractor.extract_feature_planecycle(fixed_volume).permute(0, 4, 2, 3, 1).contiguous()
         features_mov_native = extractor.extract_feature_planecycle(moving_volume).permute(0, 4, 2, 3, 1).contiguous()
