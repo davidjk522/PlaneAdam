@@ -209,17 +209,28 @@ def adam_refine_displacement(disp_init, features_fix_native, features_mov_native
                                              size=(H, W, D), mode='trilinear', align_corners=False)
                 warp_grid_native = grid0_native + disp_native.permute(0, 2, 3, 4, 1).flip(-1).div(scale1_native)
 
+            # bf16 autocast: these two terms are the dominant memory cost in this loop (native
+            # H,W,D-resolution conv3d for NCC's box filter and MIND-SSC's patch-SSD), and were the
+            # source of repeated OOMs even with PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True on
+            # a 24GB A5000 at 896x896/vitb16. Safe here because this is still a full forward+backward
+            # pass (gradients flow to net[0].weight normally, same as standard AMP training) - not a
+            # no_grad inference shortcut. bf16 shares fp32's exponent range so there's no overflow
+            # risk. loss/reg_loss stay fp32; PyTorch's bf16+fp32 promotion rules upcast automatically
+            # when these terms are added below.
             if use_ncc:
-                # Warp the raw moving image with it - differentiably, so the NCC term's gradient
-                # reaches net[0].weight the same way the feature term's does.
-                warped_img_native = F.grid_sample(img_moving_native, warp_grid_native, align_corners=False, mode='bilinear')
-                loss = loss + lambda_ncc * ncc_loss_fn(img_fixed_native, warped_img_native)
+                with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+                    # Warp the raw moving image with it - differentiably, so the NCC term's gradient
+                    # reaches net[0].weight the same way the feature term's does.
+                    warped_img_native = F.grid_sample(img_moving_native, warp_grid_native, align_corners=False, mode='bilinear')
+                    ncc_term = ncc_loss_fn(img_fixed_native, warped_img_native)
+                loss = loss + lambda_ncc * ncc_term
 
             if use_mind:
-                # Warp the precomputed MIND-SSC descriptor map the same way the DINO feature term
-                # warps patch_features_mov - same grid_sample-then-SSD pattern, different features.
-                mind_mov_warped_native = F.grid_sample(mind_moving_native, warp_grid_native, align_corners=False, mode='bilinear')
-                mind_cost = (mind_fixed_native - mind_mov_warped_native).pow(2).mean(1) * mind_ch
+                with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
+                    # Warp the precomputed MIND-SSC descriptor map the same way the DINO feature term
+                    # warps patch_features_mov - same grid_sample-then-SSD pattern, different features.
+                    mind_mov_warped_native = F.grid_sample(mind_moving_native, warp_grid_native, align_corners=False, mode='bilinear')
+                    mind_cost = (mind_fixed_native - mind_mov_warped_native).pow(2).mean(1) * mind_ch
                 loss = loss + lambda_mind * mind_cost.mean()
 
             (loss + reg_loss).backward()
