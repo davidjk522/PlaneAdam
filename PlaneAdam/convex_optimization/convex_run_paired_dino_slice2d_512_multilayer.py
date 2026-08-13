@@ -104,6 +104,15 @@ def extract_feature_slice2d_multilayer(backbone, volume, device, num_layers, chu
         return torch.cat(chunks, dim=1)
 
 
+PCA_FIT_MAX_SAMPLES = 100_000  # cap on voxels used to *fit* the PCA basis (see reduce_channels_pca
+# docstring) - fitting a k-dim basis doesn't need every native-grid voxel, only enough to estimate
+# it reliably. At 896x896/vitb16 the full concatenated fix+mov matrix is Hn*Wn*Dn*2*(768*num_layers)
+# *4 bytes - e.g. ~14.8GB at num_layers=4, even bigger than the single-layer variant's ~3.7GB (the
+# exact OOM size hit repeatedly on a 24GB A5000 there), since this variant concatenates multiple
+# layers' channels before PCA reduction. Subsampling the *fit* only (projection below still runs on
+# the full voxel set, so output resolution is unaffected) cuts this to a fixed, small cost
+# regardless of resolution/backbone/num_layers.
+
 def reduce_channels_pca(features_fix, features_mov, k):
     """
     Fit a PCA basis jointly on a pair's fixed+moving native-grid voxels and project both onto
@@ -113,7 +122,12 @@ def reduce_channels_pca(features_fix, features_mov, k):
     B, C, Hn, Wn, Dn = features_fix.shape
     flat_fix = features_fix.permute(0, 2, 3, 4, 1).reshape(-1, C)
     flat_mov = features_mov.permute(0, 2, 3, 4, 1).reshape(-1, C)
-    X = torch.cat([flat_fix, flat_mov], dim=0).float()
+    X_full = torch.cat([flat_fix, flat_mov], dim=0).float()
+    if X_full.shape[0] > PCA_FIT_MAX_SAMPLES:
+        idx = torch.randperm(X_full.shape[0], device=X_full.device)[:PCA_FIT_MAX_SAMPLES]
+        X = X_full[idx]
+    else:
+        X = X_full
     mean = X.mean(0, keepdim=True)
     _, _, V = torch.pca_lowrank(X - mean, q=k, niter=4)
 
