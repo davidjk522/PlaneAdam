@@ -25,11 +25,13 @@ class DinoBackboneExtractor:
         (4096, 40, 32, SwiGLUFFN): "vit7b",
     }
 
-    def __init__(self, backbone: nn.Module, plane_chunk_size: int | None = None):
+    def __init__(self, backbone: nn.Module, plane_chunk_size: int | None = None,
+                 cycle_order: tuple[str, ...] = ("HW", "DW", "DH", "HW")):
         self.device = self.get_device()
         self.backbone = backbone.to(self.device)
         self.arch_name = self.find_backbone(self.backbone)
-        self.planecycle = PlaneCycleConverter(self.backbone, plane_chunk_size=plane_chunk_size)
+        self.planecycle = PlaneCycleConverter(self.backbone, plane_chunk_size=plane_chunk_size,
+                                               cycle_order=cycle_order)
 
     @staticmethod
     def detect_cuda() -> bool:

@@ -252,7 +252,8 @@ def adam_refine_displacement(disp_init, features_fix_native, features_mov_native
 
 
 def main(gpunum, configfile, pca_dim=None, adam_niter=None, plane_chunk_size=None,
-         lambda_ncc=0.0, ncc_win=9, lambda_mind=0.0, mind_r=1, mind_d=2):
+         lambda_ncc=0.0, ncc_win=9, lambda_mind=0.0, mind_r=1, mind_d=2,
+         cycle_order=("HW", "DW", "DH", "HW")):
 
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
     os.environ['CUDA_VISIBLE_DEVICES'] = str((gpunum))
@@ -269,12 +270,13 @@ def main(gpunum, configfile, pca_dim=None, adam_niter=None, plane_chunk_size=Non
     backbone_fn = getattr(backbones_module, config['backbone'])
     checkpoint_path = os.path.join(REPO_ROOT, config['checkpoint'])
     backbone = backbone_fn(pretrained=True, weights=checkpoint_path)
-    extractor = DinoBackboneExtractor(backbone, plane_chunk_size=plane_chunk_size)
+    extractor = DinoBackboneExtractor(backbone, plane_chunk_size=plane_chunk_size, cycle_order=cycle_order)
     print(f'using backbone {extractor.arch_name} on {extractor.device}')
     print(f'PCA channel reduction: {pca_dim}' if pca_dim else 'PCA channel reduction: off (using all channels)')
     print(f'Adam refinement: {adam_niter} iterations' if adam_niter else 'Adam refinement: off (discrete stage only)')
     print(f'PlaneCycle plane_chunk_size: {plane_chunk_size}' if plane_chunk_size else
           'PlaneCycle plane_chunk_size: unchunked (original behavior)')
+    print(f'PlaneCycle cycle_order: {"->".join(cycle_order)}')
     if lambda_ncc > 0:
         print(f'Image-space NCC term: lambda={lambda_ncc}, window={ncc_win} (native resolution)')
     if lambda_mind > 0:
@@ -498,11 +500,13 @@ def main(gpunum, configfile, pca_dim=None, adam_niter=None, plane_chunk_size=Non
     pca_suffix = f'_pca{pca_dim}' if pca_dim else ''
     adam_suffix = f'_adam{adam_niter}' if adam_niter else ''
     chunk_suffix = f'_planechunk{plane_chunk_size}' if plane_chunk_size else ''
+    cycle_suffix = (f'_cycle{"".join(cycle_order)}'
+                     if cycle_order != ("HW", "DW", "DH", "HW") else '')
     ncc_suffix = f'_ncc{lambda_ncc:g}w{ncc_win}' if lambda_ncc > 0 else ''
     mind_suffix = f'_mind{lambda_mind:g}r{mind_r}d{mind_d}' if lambda_mind > 0 else ''
     param_suffix = (f'_gridspadam{best_param0}_lambda{best_param1_str}' if adam_niter is not None
                      else f'_gridsp{best_param0}_disphw{best_param1_str}')
-    run_name = f'dice{best_dice:.3f}{param_suffix}{pca_suffix}{adam_suffix}{chunk_suffix}{ncc_suffix}{mind_suffix}_planecycle896_{time.strftime("%Y%m%d_%H%M%S")}'
+    run_name = f'dice{best_dice:.3f}{param_suffix}{pca_suffix}{adam_suffix}{chunk_suffix}{cycle_suffix}{ncc_suffix}{mind_suffix}_planecycle896_{time.strftime("%Y%m%d_%H%M%S")}'
     output_dir = os.path.join(os.path.dirname(config['output']) or '.', run_name)
     os.makedirs(output_dir, exist_ok=True)
 
@@ -553,10 +557,20 @@ if __name__ == "__main__":
     parser.add_argument("--mind-d", type=int, default=2,
                          help="MIND-SSC dilation, only used when --lambda-mind > 0. Matches the "
                               "original ConvexAdam repo's default (convex_adam_MIND.py).")
+    parser.add_argument("--cycle-order", type=str, default="HW,DW,DH,HW",
+                         help="Comma-separated sequence of planes ('HW','DW','DH') that "
+                              "PlaneCycleOp cycles round-robin across backbone blocks "
+                              "(plane assigned to block i is cycle_order[i %% len(cycle_order)]). "
+                              "Default 'HW,DW,DH,HW' matches the original PlaneCycle behavior. "
+                              "E.g. 'HW,DW' alternates just those two planes and never touches DH.")
     args = parser.parse_args()
     if args.lambda_ncc > 0 and args.adam is None:
         parser.error("--lambda-ncc > 0 requires --adam (it's only wired into the Adam refinement stage)")
     if args.lambda_mind > 0 and args.adam is None:
         parser.error("--lambda-mind > 0 requires --adam (it's only wired into the Adam refinement stage)")
+    cycle_order = tuple(p.strip() for p in args.cycle_order.split(","))
+    if not cycle_order or any(p not in ("HW", "DW", "DH") for p in cycle_order):
+        parser.error(f"--cycle-order must be a comma-separated list of 'HW'/'DW'/'DH', got {args.cycle_order!r}")
     main(args.gpu, args.configfile, args.pca, args.adam, args.plane_chunk_size,
-         args.lambda_ncc, args.ncc_win, args.lambda_mind, args.mind_r, args.mind_d)
+         args.lambda_ncc, args.ncc_win, args.lambda_mind, args.mind_r, args.mind_d,
+         cycle_order)
