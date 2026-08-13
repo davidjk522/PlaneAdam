@@ -88,6 +88,22 @@ from tqdm.auto import trange
 GRID_SP_ADAM = 2
 LAMBDA_WEIGHT = 1.25
 
+DINO_TARGET_LONG_EDGE = 896  # in-plane (H,W) resize budget before DINO feature extraction - see the
+# resize comment further down for how this is applied without distorting aspect ratio.
+DINO_PATCH_SIZE = 16
+
+
+def _aspect_preserving_hw(H, W, target_long_edge=DINO_TARGET_LONG_EDGE, patch_size=DINO_PATCH_SIZE):
+    """
+    Pick a resize target for the in-plane (H,W) axes that scales both axes by the *same* factor
+    (preserving native aspect ratio, unlike resizing straight to a fixed square) while keeping the
+    longer axis within target_long_edge and both output axes patch_size-aligned for the ViT.
+    """
+    s = target_long_edge / max(H, W)
+    H_out = max(patch_size, round(s * H / patch_size) * patch_size)
+    W_out = max(patch_size, round(s * W / patch_size) * patch_size)
+    return H_out, W_out
+
 
 PCA_FIT_MAX_SAMPLES = 100_000  # cap on voxels used to *fit* the PCA basis (see reduce_channels_pca
 # docstring) - fitting a k-dim basis doesn't need every native-grid voxel, only enough to estimate
@@ -352,18 +368,23 @@ def main(gpunum, configfile, pca_dim=None, adam_niter=None, plane_chunk_size=Non
                     moving_volume = to_volume_tensor(imgs_moving[i]).unsqueeze(0).to(extractor.device)
 
                     # Upsample the in-plane (H,W) resolution before extraction (patch_size unchanged at
-                    # 16) — 896x896, MedDINOv3's second documented baseline step (after 640x640, before
-                    # their 896x896 being the largest resolution they report scaling to), giving a
-                    # 56x56 native token grid. D is left untouched (it was never patchified to begin
-                    # with). Was previously downgraded to 512x512 to fit a 12GB GPU (see the
-                    # module-level comment above), then briefly restored to 640, then pushed to this
-                    # 896 step now that we're on an A5000 (24GB) — watch memory here; consider
-                    # --plane-chunk-size if this OOMs.
-                    # Note: our native H,W (160,224) isn't square like MedDINOv3's CT slices, so this
-                    # resize stretches H ~5.6x vs W ~4x — a real aspect-ratio distortion, flagged
-                    # rather than silently applied.
-                    fixed_volume = F.interpolate(fixed_volume, size=(D, 896, 896), mode='trilinear', align_corners=False)
-                    moving_volume = F.interpolate(moving_volume, size=(D, 896, 896), mode='trilinear', align_corners=False)
+                    # 16) — targeting a long-edge budget of 896 (MedDINOv3's second documented
+                    # baseline step) — giving up to a 56-token long edge. D is left untouched (it was
+                    # never patchified to begin with). Was previously downgraded to 512x512 to fit a
+                    # 12GB GPU (see the module-level comment above), then briefly restored to 640, then
+                    # pushed to this 896 budget now that we're on an A5000 (24GB) — watch memory here;
+                    # consider --plane-chunk-size if this OOMs.
+                    #
+                    # Previously resized to a fixed 896x896 square, which forced two different stretch
+                    # factors onto our non-square native H,W (160,224) - H ~5.6x vs W ~4x - a real
+                    # aspect-ratio distortion. Fixed here by applying one uniform scale factor (pinned
+                    # to the longer axis, W, so the 896 budget is still respected) to both axes, each
+                    # then rounded to a patch_size=16 multiple so the ViT still tokenizes cleanly. For
+                    # this dataset's native (H,W)=(160,224) that resolves to (640,896), not (896,896) -
+                    # same aspect ratio (0.714) as the native grid instead of a forced 1:1 square.
+                    H_resized, W_resized = _aspect_preserving_hw(H, W)
+                    fixed_volume = F.interpolate(fixed_volume, size=(D, H_resized, W_resized), mode='trilinear', align_corners=False)
+                    moving_volume = F.interpolate(moving_volume, size=(D, H_resized, W_resized), mode='trilinear', align_corners=False)
 
                     # extract_feature_planecycle returns (B, D, H, W, C) on the *native ViT patch grid*
                     # (D at full native resolution, H/W collapsed to patch_size steps) — permute to
