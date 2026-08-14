@@ -44,6 +44,22 @@ from tqdm.auto import trange
 GRID_SP_ADAM = 2
 LAMBDA_WEIGHT = 1.25
 
+DINO_TARGET_LONG_EDGE = 640  # in-plane (H,W) resize budget before DINO feature extraction - see the
+# resize comment further down for how this is applied without distorting aspect ratio.
+DINO_PATCH_SIZE = 16
+
+
+def _aspect_preserving_hw(H, W, target_long_edge=DINO_TARGET_LONG_EDGE, patch_size=DINO_PATCH_SIZE):
+    """
+    Pick a resize target for the in-plane (H,W) axes that scales both axes by the *same* factor
+    (preserving native aspect ratio, unlike resizing straight to a fixed square) while keeping the
+    longer axis within target_long_edge and both output axes patch_size-aligned for the ViT.
+    """
+    s = target_long_edge / max(H, W)
+    H_out = max(patch_size, round(s * H / patch_size) * patch_size)
+    W_out = max(patch_size, round(s * W / patch_size) * patch_size)
+    return H_out, W_out
+
 
 SLICE_CHUNK_SIZE = 32  # of the 192 D-slices processed through the ViT per forward call; lower this
                         # further if 640x640 still OOMs, raise it (up to 192, i.e. unchunked) if
@@ -276,11 +292,15 @@ def main(gpunum, configfile, pca_dim=None, adam_niter=None):
                     # left untouched (it was never patchified to begin with). Combined with chunked
                     # extraction (see extract_feature_slice2d/SLICE_CHUNK_SIZE above) to fit in 12GB —
                     # the unchunked 320x320 version doesn't chunk because it didn't need to.
-                    # Note: our native H,W (160,224) isn't square like MedDINOv3's CT slices, so this
-                    # resize stretches H ~4x vs W ~2.9x — a real aspect-ratio distortion, flagged rather
-                    # than silently applied.
-                    fixed_volume = F.interpolate(fixed_volume, size=(D, 640, 640), mode='trilinear', align_corners=False)
-                    moving_volume = F.interpolate(moving_volume, size=(D, 640, 640), mode='trilinear', align_corners=False)
+                    # Previously resized to a fixed 640x640 square, which forced two different stretch
+                    # factors onto our non-square native H,W (160,224) - H ~4x vs W ~2.9x. Fixed by
+                    # applying one uniform scale factor (pinned to the longer axis, W, so the 640
+                    # budget is still respected) to both axes, each rounded to a patch_size=16
+                    # multiple so the ViT still tokenizes cleanly - preserves native aspect ratio
+                    # instead of forcing a 1:1 square.
+                    H_resized, W_resized = _aspect_preserving_hw(H, W)
+                    fixed_volume = F.interpolate(fixed_volume, size=(D, H_resized, W_resized), mode='trilinear', align_corners=False)
+                    moving_volume = F.interpolate(moving_volume, size=(D, H_resized, W_resized), mode='trilinear', align_corners=False)
 
                     # extract_feature_slice2d returns (B, D, H, W, C) on the *native ViT patch grid*
                     # (D at full native resolution, H/W collapsed to patch_size steps) — permute to
