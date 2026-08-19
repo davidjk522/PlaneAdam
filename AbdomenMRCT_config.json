@@ -19,8 +19,8 @@
     192
   ],
   "num_labels": 5,
-  "backbone": "dinov3_vits16",
-  "checkpoint": "dinov3_vits16_pretrain_lvd1689m-08c60483.pth",
+  "backbone": "dinov3_vitb16",
+  "checkpoint": "dinov3_vitb16_pretrain_lvd1689m-73cec8be.pth",
   "output": "AbdomenMRCT_output/convex_search_results.pth",
   "output_adam": "AbdomenMRCT_output/adam_search_results.pth"
 }
